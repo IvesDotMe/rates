@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Loonie Rates</title>
+<title>Rates</title>
 <meta name="description" content="Canadian dollar to Brazilian real, Australian dollar, euro and US dollar, with live ECB reference rates.">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#10141A" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Loonie Rates">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C8102E'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='18' text-anchor='middle' fill='white'%3E$%3C/text%3E%3C/svg%3E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rates">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://api.frankfurter.dev" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one narrow phone-first column. CAD amount on top, four currency rows below, source note last. */
 :root {
@@ -28,7 +30,6 @@
   --down: #A3561C;
   --spark: #3A475A;
   --spark-fill: rgba(58, 71, 90, 0.09);
-  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -77,21 +78,16 @@ body {
   .wrap { padding-block: 56px 64px; gap: 28px; }
 }
 
-.head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-}
-h1 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 2.5rem;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  margin: 0;
-  text-wrap: balance;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 .asof { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 
@@ -237,8 +233,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </head>
 <body>
 <main class="wrap">
-  <header class="head">
-    <h1>Loonie Rates</h1>
+  <header>
+    <h1 class="sr-only">Rates</h1>
     <p class="asof" id="asof">Loading rates…</p>
   </header>
 
@@ -461,9 +457,11 @@ quickEl.addEventListener("click", e => {
 
 document.getElementById("retry").addEventListener("click", loadRates);
 
-document.addEventListener("visibilitychange", () => {
+function refreshIfStale() {
   if (document.visibilityState === "visible" && (!state.data || Date.now() - state.data.fetchedAt > STALE_MS)) loadRates();
-});
+}
+document.addEventListener("visibilitychange", refreshIfStale);
+setInterval(refreshIfStale, 10 * 60 * 1000);
 
 buildRows();
 const savedAmount = readStore(AMOUNT_KEY);
