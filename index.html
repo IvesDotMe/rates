@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Loonie Rates</title>
+<meta name="description" content="Canadian dollar to Brazilian real, Australian dollar, euro and US dollar, with live ECB reference rates.">
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10141A" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Loonie Rates">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C8102E'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='18' text-anchor='middle' fill='white'%3E$%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://api.frankfurter.dev" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap">
+<style>
+/* Layout: one narrow phone-first column. CAD amount on top, four currency rows below, source note last. */
+:root {
+  --bg: #F4F6F8;
+  --surface: #FFFFFF;
+  --ink: #141820;
+  --muted: #5A6472;
+  --line: #DFE3E9;
+  --accent: #C8102E;
+  --accent-soft: #FBE8EB;
+  --up: #1D7A4B;
+  --down: #A3561C;
+  --spark: #3A475A;
+  --spark-fill: rgba(58, 71, 90, 0.09);
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10141A;
+    --surface: #171C24;
+    --ink: #ECEFF3;
+    --muted: #97A1AE;
+    --line: #262D38;
+    --accent: #FF6378;
+    --accent-soft: rgba(255, 99, 120, 0.14);
+    --up: #52C48D;
+    --down: #E2A262;
+    --spark: #B9C4D2;
+    --spark-fill: rgba(185, 196, 210, 0.10);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+.wrap {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px));
+  padding-block: 28px 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+@media (min-width: 640px) {
+  .wrap { padding-block: 56px 64px; gap: 28px; }
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 2.5rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.asof { margin: 0; color: var(--muted); font-size: 0.8125rem; }
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.amount {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 6px;
+  transition: border-color 0.15s;
+}
+.field:focus-within { border-color: var(--accent); }
+.cur {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+#amt {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 2.25rem/1.15 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+#amt[aria-invalid="true"] { color: var(--down); }
+.hint { margin: 0; font-size: 0.8125rem; color: var(--down); }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: 500 0.875rem/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quick button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.cols { display: flex; justify-content: space-between; gap: 16px; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "who value" "meta trend";
+  align-items: center;
+  gap: 4px 16px;
+  padding-block: 16px;
+  border-top: 1px solid var(--line);
+}
+.row:last-child { border-bottom: 1px solid var(--line); }
+.who { grid-area: who; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.code { font-family: var(--font-mono); font-weight: 500; font-size: 0.8125rem; letter-spacing: 0.04em; }
+.name { color: var(--muted); font-size: 0.875rem; }
+.value {
+  grid-area: value;
+  text-align: right;
+  font-weight: 600;
+  font-size: 1.625rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.meta {
+  grid-area: meta;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.trend { grid-area: trend; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.spark { display: block; width: 88px; height: 28px; max-width: 100%; }
+.spark .a { fill: var(--spark-fill); }
+.spark .l { fill: none; stroke: var(--spark); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark .d { fill: var(--accent); }
+.chg {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5em;
+  text-align: right;
+}
+.chg.up { color: var(--up); }
+.chg.down { color: var(--down); }
+.chg.flat { color: var(--muted); }
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.status p { margin: 0; min-width: 0; }
+.note { margin: 0; color: var(--muted); font-size: 0.8125rem; max-width: 60ch; }
+.note a { color: inherit; }
+
+@media (max-width: 380px) {
+  .value { font-size: 1.375rem; }
+  .spark { width: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .field { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="head">
+    <h1>Loonie Rates</h1>
+    <p class="asof" id="asof">Loading rates…</p>
+  </header>
+
+  <section class="amount" aria-label="Amount in Canadian dollars">
+    <label for="amt" class="label">You have</label>
+    <div class="field">
+      <span class="cur">CAD</span>
+      <input id="amt" type="text" size="1" inputmode="decimal" autocomplete="off" spellcheck="false" value="100" aria-describedby="hint">
+    </div>
+    <p class="hint" id="hint" hidden>Enter a number, like 250 or 1,000.</p>
+    <div class="quick" id="quick" role="group" aria-label="Quick amounts"></div>
+  </section>
+
+  <section class="list" aria-label="Converted amounts">
+    <div class="cols">
+      <span class="label">You get</span>
+      <span class="label" id="since">30-day trend</span>
+    </div>
+    <ul class="rows" id="rows"></ul>
+    <div class="status" id="status" role="status" hidden>
+      <p id="status-text"></p>
+      <button type="button" id="retry">Try again</button>
+    </div>
+  </section>
+
+  <p class="note">Mid-market reference rates from the European Central Bank via <a href="https://frankfurter.dev" target="_blank" rel="noopener">Frankfurter</a>, published around 16:00 CET on working days. Banks and card issuers add their own margin, so what you pay will be a little worse.</p>
+</main>
+
+<script>
+const API = "https://api.frankfurter.dev/v1";
+const CURRENCIES = [
+  { code: "BRL", name: "Brazilian real" },
+  { code: "AUD", name: "Australian dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "USD", name: "US dollar" },
+];
+const QUICK = [1, 100, 500, 1000];
+const AMOUNT_KEY = "loonie-rates.amount";
+const DATA_KEY = "loonie-rates.data";
+const STALE_MS = 60 * 60 * 1000;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const state = { data: null, amount: 100, loading: false };
+const rowsEl = document.getElementById("rows");
+const amtEl = document.getElementById("amt");
+const quickEl = document.getElementById("quick");
+const statusEl = document.getElementById("status");
+const asofEl = document.getElementById("asof");
+
+function parseAmount(raw) {
+  let s = String(raw).replace(/[\s$]/g, "");
+  if (!s) return NaN;
+  const commas = (s.match(/,/g) || []).length;
+  // "10,5" reads as a decimal comma; "1,000" reads as a thousands separator
+  if (!s.includes(".") && commas === 1 && /,\d{1,2}$/.test(s)) s = s.replace(",", ".");
+  else s = s.replace(/,/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+
+function money(v, code) {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(v);
+}
+
+function day(iso, opts) {
+  return new Date(iso + "T12:00:00Z").toLocaleDateString("en-CA", { timeZone: "UTC", ...opts });
+}
+
+function isoDaysAgo(n) {
+  return new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+}
+
+function readStore(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function writeStore(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) {}
+}
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function drawSpark(svg, series) {
+  svg.replaceChildren();
+  if (series.length < 2) return;
+  const W = 88, H = 28, P = 3;
+  const min = Math.min(...series), max = Math.max(...series), span = max - min || 1;
+  const x = i => P + (i * (W - 2 * P)) / (series.length - 1);
+  const y = v => P + ((max - v) / span) * (H - 2 * P);
+  const pts = series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const last = series.length - 1;
+  svg.append(
+    svgEl("path", { class: "a", d: `M${x(0).toFixed(1)},${H} L${pts.join(" L")} L${x(last).toFixed(1)},${H} Z` }),
+    svgEl("polyline", { class: "l", points: pts.join(" ") }),
+    svgEl("circle", { class: "d", cx: x(last).toFixed(1), cy: y(series[last]).toFixed(1), r: 2.5 }),
+  );
+}
+
+function buildRows() {
+  rowsEl.innerHTML = CURRENCIES.map(c => `
+    <li class="row" data-code="${c.code}">
+      <div class="who"><span class="code">${c.code}</span><span class="name">${c.name}</span></div>
+      <div class="value" data-k="value">—</div>
+      <div class="meta"><span data-k="rate">1 CAD = … ${c.code}</span><span data-k="inv">1 ${c.code} = … CAD</span></div>
+      <div class="trend"><svg class="spark" data-k="spark" viewBox="0 0 88 28" aria-hidden="true"></svg><span class="chg flat" data-k="chg"></span></div>
+    </li>`).join("");
+  quickEl.innerHTML = QUICK.map(v =>
+    `<button type="button" data-v="${v}" aria-pressed="false">${v.toLocaleString("en-CA")}</button>`).join("");
+}
+
+function render() {
+  const valid = Number.isFinite(state.amount);
+  amtEl.setAttribute("aria-invalid", valid ? "false" : "true");
+  document.getElementById("hint").hidden = valid;
+  for (const b of quickEl.children) b.setAttribute("aria-pressed", String(Number(b.dataset.v) === state.amount));
+
+  const d = state.data;
+  if (!d) return;
+  asofEl.textContent = `ECB rates for ${day(d.date, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}`;
+  const hist = Array.isArray(d.history) ? d.history : [];
+  const since = hist.length > 1 ? day(hist[0].d, { month: "short", day: "numeric" }) : null;
+  document.getElementById("since").textContent = since ? `Since ${since}` : "30-day trend";
+
+  for (const c of CURRENCIES) {
+    const row = rowsEl.querySelector(`[data-code="${c.code}"]`);
+    const k = name => row.querySelector(`[data-k="${name}"]`);
+    const r = d.rates && d.rates[c.code];
+    if (!Number.isFinite(r)) { k("value").textContent = "—"; continue; }
+
+    k("value").textContent = valid ? money(state.amount * r, c.code) : "—";
+    k("rate").textContent = `1 CAD = ${r.toFixed(4)} ${c.code}`;
+    k("inv").textContent = `1 ${c.code} = ${(1 / r).toFixed(4)} CAD`;
+
+    const series = hist.map(h => h[c.code]).filter(Number.isFinite);
+    drawSpark(k("spark"), series);
+    const chg = k("chg");
+    if (series.length > 1) {
+      const pct = ((series[series.length - 1] - series[0]) / series[0]) * 100;
+      const dir = Math.abs(pct) < 0.05 ? "flat" : pct > 0 ? "up" : "down";
+      chg.className = `chg ${dir}`;
+      chg.textContent = `${dir === "up" ? "▲" : dir === "down" ? "▼" : "≈"} ${Math.abs(pct).toFixed(1)}%`;
+      chg.setAttribute("aria-label", dir === "flat"
+        ? `CAD about flat against ${c.code} since ${since}`
+        : `CAD ${dir} ${Math.abs(pct).toFixed(1)} percent against ${c.code} since ${since}`);
+    } else {
+      chg.className = "chg flat";
+      chg.textContent = "";
+      chg.removeAttribute("aria-label");
+    }
+  }
+}
+
+function showStatus(message) {
+  document.getElementById("status-text").textContent = message;
+  statusEl.hidden = !message;
+}
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function loadRates() {
+  if (state.loading) return;
+  state.loading = true;
+  if (!state.data) asofEl.textContent = "Loading rates…";
+  const to = CURRENCIES.map(c => c.code).join(",");
+  try {
+    const [latest, series] = await Promise.allSettled([
+      fetchJSON(`${API}/latest?from=CAD&to=${to}`),
+      fetchJSON(`${API}/${isoDaysAgo(30)}..?from=CAD&to=${to}`),
+    ]);
+    if (latest.status !== "fulfilled") throw latest.reason;
+
+    let history = [];
+    if (series.status === "fulfilled" && series.value.rates) {
+      history = Object.keys(series.value.rates).sort().map(d => ({ d, ...series.value.rates[d] }));
+    } else if (state.data) {
+      history = state.data.history || [];
+    }
+    const { date, rates } = latest.value;
+    if (history.length && history[history.length - 1].d < date) history.push({ d: date, ...rates });
+
+    state.data = { date, rates, history, fetchedAt: Date.now() };
+    writeStore(DATA_KEY, JSON.stringify(state.data));
+    showStatus("");
+    render();
+  } catch (e) {
+    showStatus(state.data
+      ? "Couldn't reach the rates service. Showing the last rates saved on this device."
+      : "Couldn't reach the rates service. Check your connection and try again.");
+    if (!state.data) asofEl.textContent = "Rates unavailable";
+  } finally {
+    state.loading = false;
+  }
+}
+
+amtEl.addEventListener("input", () => {
+  state.amount = parseAmount(amtEl.value);
+  render();
+  writeStore(AMOUNT_KEY, amtEl.value);
+});
+
+quickEl.addEventListener("click", e => {
+  const b = e.target.closest("button[data-v]");
+  if (!b) return;
+  const v = Number(b.dataset.v);
+  amtEl.value = v.toLocaleString("en-CA");
+  state.amount = v;
+  render();
+  writeStore(AMOUNT_KEY, amtEl.value);
+});
+
+document.getElementById("retry").addEventListener("click", loadRates);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && (!state.data || Date.now() - state.data.fetchedAt > STALE_MS)) loadRates();
+});
+
+buildRows();
+const savedAmount = readStore(AMOUNT_KEY);
+if (savedAmount) amtEl.value = savedAmount;
+state.amount = parseAmount(amtEl.value);
+try {
+  const cached = JSON.parse(readStore(DATA_KEY) || "null");
+  if (cached && cached.date && cached.rates) state.data = cached;
+} catch (e) {}
+render();
+loadRates();
+</script>
+</body>
+</html>
