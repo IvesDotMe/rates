@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://api.frankfurter.dev" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: phone-first single column (CAD amount, currency rows, note).
+/* Layout: phone-first single column (amount, currency rows, note).
    Tablet/desktop: amount panel pinned on the left, currencies on the right; wide screens lay currencies out as cards. */
 :root {
   --bg: #F4F6F8;
@@ -33,6 +33,7 @@
   --spark-fill: rgba(58, 71, 90, 0.09);
   --shadow: 0 1px 2px rgba(20, 24, 32, 0.04), 0 8px 24px rgba(20, 24, 32, 0.06);
   --scrim: rgba(16, 20, 26, 0.45);
+  --glass: rgba(255, 255, 255, 0.74);
   --font-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -52,6 +53,7 @@
     --spark-fill: rgba(185, 196, 210, 0.10);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.25);
     --scrim: rgba(0, 0, 0, 0.6);
+    --glass: rgba(20, 25, 33, 0.62);
     color-scheme: dark;
   }
 }
@@ -141,6 +143,9 @@ body {
   padding: 4px 8px;
   border-radius: 6px;
 }
+button.cur { display: inline-flex; align-items: center; gap: 5px; border: 0; line-height: 1.5; }
+button.cur:hover { background: var(--accent); color: #fff; }
+.cur .caret { font-size: 0.7em; opacity: 0.8; }
 #amt {
   flex: 1;
   min-width: 0;
@@ -291,6 +296,32 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .note { margin: 0; color: var(--muted); font-size: 0.8125rem; max-width: 60ch; }
 .note a { color: inherit; }
 
+/* ---------- animated background ----------
+   The canvas sits behind everything; while it runs, panels turn to frosted glass so text stays readable. */
+#fx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; display: block; pointer-events: none; }
+#fx-toggle {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  width: 38px; height: 38px; padding: 0;
+  display: grid; place-items: center;
+  font-size: 1rem;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: var(--muted);
+  z-index: 5;
+}
+#fx-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.fx .amount, .fx .list, .fx .note, .fx .status {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+}
+.fx .list { border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px 14px; }
+.fx .note { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.fx .edit-btn:not([aria-pressed="true"]) { background: var(--glass); }
+.fx .asof { text-shadow: 0 0 12px var(--bg), 0 0 4px var(--bg); }
+.fx .title { text-shadow: 0 0 18px var(--bg); }
+
 /* ---------- currency picker ---------- */
 dialog.picker {
   width: min(28rem, calc(100vw - 24px));
@@ -393,6 +424,12 @@ dialog.picker::backdrop { background: var(--scrim); backdrop-filter: blur(2px); 
   .editing .row { padding-left: 20px; }
   .del { top: -10px; left: auto; right: -10px; transform: none; box-shadow: var(--shadow); background: var(--surface); border-color: var(--line); }
   .add { margin-top: 16px; padding: 18px; border-radius: 16px; }
+  .fx .list { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; padding: 0; }
+  .fx .row, .fx .add {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+  }
+  .fx .cols { text-shadow: 0 0 12px var(--bg), 0 0 4px var(--bg); }
   .empty { border: 1.5px dashed var(--line); border-radius: 16px; }
 }
 
@@ -404,6 +441,7 @@ dialog.picker::backdrop { background: var(--scrim); backdrop-filter: blur(2px); 
 </style>
 </head>
 <body>
+<canvas id="fx" aria-hidden="true" hidden></canvas>
 <main class="wrap">
   <header class="top">
     <h1 class="title">Rates<span class="dot">.</span></h1>
@@ -411,10 +449,10 @@ dialog.picker::backdrop { background: var(--scrim); backdrop-filter: blur(2px); 
   </header>
 
   <div class="side">
-    <section class="amount" aria-label="Amount in Canadian dollars">
+    <section class="amount" id="amount" aria-label="Amount in Canadian dollars">
       <label for="amt" class="label">You have</label>
       <div class="field">
-        <span class="cur">CAD</span>
+        <button type="button" class="cur" id="base" aria-haspopup="dialog" aria-label="Change currency, currently CAD"><span id="base-code">CAD</span><span class="caret" aria-hidden="true">▾</span></button>
         <input id="amt" type="text" size="1" inputmode="decimal" autocomplete="off" spellcheck="false" value="100" aria-describedby="hint">
       </div>
       <p class="hint" id="hint" hidden>Enter a number, like 250 or 1,000.</p>
@@ -452,21 +490,27 @@ dialog.picker::backdrop { background: var(--scrim); backdrop-filter: blur(2px); 
   <ul class="pk-list" id="pk-list"></ul>
 </dialog>
 
+<button type="button" id="fx-toggle" aria-pressed="true" aria-label="Background animation" hidden>✦</button>
+
 <script>
 const API = "https://api.frankfurter.dev/v1";
-const BASE = "CAD";
+const DEFAULT_BASE = "CAD";
+let BASE = DEFAULT_BASE;   // the "You have" currency; change it by tapping the chip
 const DEFAULT_CODES = ["BRL", "AUD", "EUR", "USD"];
 // ECB reference currencies (fallback when the live list hasn't loaded yet)
-const KNOWN = ["AUD","BGN","BRL","CHF","CNY","CZK","DKK","EUR","GBP","HKD","HUF","IDR","ILS","INR","ISK","JPY","KRW","MXN","MYR","NOK","NZD","PHP","PLN","RON","SEK","SGD","THB","TRY","USD","ZAR"];
+const KNOWN = ["AUD","BGN","BRL","CAD","CHF","CNY","CZK","DKK","EUR","GBP","HKD","HUF","IDR","ILS","INR","ISK","JPY","KRW","MXN","MYR","NOK","NZD","PHP","PLN","RON","SEK","SGD","THB","TRY","USD","ZAR"];
 const NAME_FALLBACK = { BRL: "Brazilian real", AUD: "Australian dollar", EUR: "Euro", USD: "US dollar" };
 const QUICK = [1, 100, 500, 1000];
 const AMOUNT_KEY = "loonie-rates.amount";
 const DATA_KEY = "loonie-rates.data";
 const CODES_KEY = "loonie-rates.currencies";
+const BASE_KEY = "loonie-rates.base";
 const STALE_MS = 60 * 60 * 1000;
 const SVG_NS = "http://www.w3.org/2000/svg";
+// The animated background (loaded separately, below) reacts to what you do; a no-op if it isn't running
+function fxPulse(n) { try { if (window.ratesFx) window.ratesFx.pulse(n); } catch (e) {} }
 
-const state = { data: null, amount: 100, loading: false, codes: DEFAULT_CODES.slice(), editing: false };
+const state = { data: null, amount: 100, loading: false, codes: DEFAULT_CODES.slice(), editing: false, pickerMode: "add" };
 const rowsEl = document.getElementById("rows");
 const amtEl = document.getElementById("amt");
 const quickEl = document.getElementById("quick");
@@ -612,8 +656,8 @@ function render() {
       chg.className = `chg ${dir}`;
       chg.textContent = `${dir === "up" ? "▲" : dir === "down" ? "▼" : "≈"} ${Math.abs(pct).toFixed(1)}%`;
       chg.setAttribute("aria-label", dir === "flat"
-        ? `CAD about flat against ${code} since ${since}`
-        : `CAD ${dir} ${Math.abs(pct).toFixed(1)} percent against ${code} since ${since}`);
+        ? `${BASE} about flat against ${code} since ${since}`
+        : `${BASE} ${dir} ${Math.abs(pct).toFixed(1)} percent against ${code} since ${since}`);
     } else {
       chg.className = "chg flat";
       chg.textContent = "";
@@ -637,12 +681,14 @@ async function fetchJSON(url) {
 async function loadRates() {
   if (state.loading) return;
   state.loading = true;
+  const reqBase = BASE;
   if (!state.data) asofEl.textContent = "Loading rates…";
   try {
     const [latest, series] = await Promise.allSettled([
       fetchJSON(`${API}/latest?from=${BASE}`),
       fetchJSON(`${API}/${isoDaysAgo(30)}..?from=${BASE}`),
     ]);
+    if (reqBase !== BASE) return;   // currency changed while loading; the finally block reloads
     if (latest.status !== "fulfilled") throw latest.reason;
 
     let history = [];
@@ -654,19 +700,65 @@ async function loadRates() {
     const { date, rates } = latest.value;
     if (history.length && history[history.length - 1].d < date) history.push({ d: date, ...rates });
 
-    state.data = { date, rates, history, fetchedAt: Date.now() };
+    state.data = { base: BASE, date, rates, history, fetchedAt: Date.now() };
     writeStore(DATA_KEY, JSON.stringify(state.data));
     showStatus("");
     render();
     if (pickerEl.open) renderPicker();
+    fxPulse(1.6);
   } catch (e) {
+    if (reqBase !== BASE) return;
     showStatus(state.data
       ? "Couldn't reach the rates service. Showing the last rates saved on this device."
       : "Couldn't reach the rates service. Check your connection and try again.");
     if (!state.data) asofEl.textContent = "Rates unavailable";
   } finally {
     state.loading = false;
+    if (reqBase !== BASE) loadRates();
   }
+}
+
+/* ---------- "You have" currency ---------- */
+function showBase() {
+  document.getElementById("base-code").textContent = BASE;
+  document.getElementById("base").setAttribute("aria-label", `Change currency, currently ${curName(BASE)}`);
+  document.getElementById("amount").setAttribute("aria-label", `Amount in ${curName(BASE)}`);
+}
+
+// Re-express saved rates in a new base so the switch is instant; fresh rates follow from the network.
+function rebase(data, from, to) {
+  const k = data && data.rates && data.rates[to];
+  if (!Number.isFinite(k) || k <= 0) return null;
+  const conv = r => {
+    const out = {};
+    for (const [c, v] of Object.entries(r)) if (c !== to && Number.isFinite(v)) out[c] = v / k;
+    out[from] = 1 / k;
+    return out;
+  };
+  const history = (data.history || []).filter(h => Number.isFinite(h[to])).map(h => {
+    const { d, ...r } = h;
+    const kk = h[to], out = { d };
+    for (const [c, v] of Object.entries(r)) if (c !== to && Number.isFinite(v)) out[c] = v / kk;
+    out[from] = 1 / kk;
+    return out;
+  });
+  return { base: to, date: data.date, rates: conv(data.rates), history, fetchedAt: 0 };
+}
+
+function setBase(code) {
+  if (code === BASE || !/^[A-Z]{3}$/.test(code)) return;
+  const old = BASE;
+  state.data = rebase(state.data, old, code);
+  BASE = code;
+  writeStore(BASE_KEY, BASE);
+  // If the new currency was in the list, the old one takes its place
+  const at = state.codes.indexOf(code);
+  if (at >= 0) state.codes[at] = old;
+  saveCodes();
+  showBase();
+  buildRows();
+  fxPulse(1.2);
+  loadRates();
 }
 
 /* ---------- add / remove ---------- */
@@ -686,6 +778,7 @@ function addCurrency(code) {
   if (!state.data || !Number.isFinite(state.data.rates && state.data.rates[code])) loadRates();
   const row = rowsEl.querySelector(`[data-code="${code}"]`);
   if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  fxPulse(1);
 }
 
 function removeCurrency(code) {
@@ -697,8 +790,9 @@ function removeCurrency(code) {
 function renderPicker() {
   const q = pkQEl.value.trim().toLowerCase();
   const rates = state.data && state.data.rates;
+  const baseMode = state.pickerMode === "base";
   const items = availableCodes()
-    .filter(c => !state.codes.includes(c))
+    .filter(c => baseMode || !state.codes.includes(c))
     .filter(c => !q || c.toLowerCase().includes(q) || curName(c).toLowerCase().includes(q));
   if (!items.length) {
     pkListEl.innerHTML = `<li><p class="pk-empty">${q ? "No matching currency." : "You've added every available currency."}</p></li>`;
@@ -706,11 +800,13 @@ function renderPicker() {
   }
   pkListEl.innerHTML = items.map(c => {
     const r = rates && rates[c];
-    return `<li><button type="button" data-add="${esc(c)}"><span class="code">${esc(c)}</span><span class="name">${esc(curName(c))}</span>${Number.isFinite(r) ? `<span class="r">${rateStr(r)}</span>` : ""}</button></li>`;
+    return `<li><button type="button" data-add="${esc(c)}"><span class="code">${esc(c)}</span><span class="name">${esc(curName(c))}</span>${!baseMode && Number.isFinite(r) ? `<span class="r">${rateStr(r)}</span>` : ""}</button></li>`;
   }).join("");
 }
 
-function openPicker() {
+function openPicker(mode) {
+  state.pickerMode = mode === "base" ? "base" : "add";
+  document.getElementById("pk-h").textContent = state.pickerMode === "base" ? "You have…" : "Add a currency";
   pkQEl.value = "";
   renderPicker();
   if (typeof pickerEl.showModal === "function") pickerEl.showModal(); else pickerEl.setAttribute("open", "");
@@ -723,20 +819,20 @@ function closePicker() {
   if (typeof pickerEl.close === "function") pickerEl.close(); else pickerEl.removeAttribute("open");
 }
 
-document.getElementById("add").addEventListener("click", openPicker);
+document.getElementById("add").addEventListener("click", () => openPicker("add"));
+document.getElementById("base").addEventListener("click", () => openPicker("base"));
+function pick(code) { closePicker(); if (state.pickerMode === "base") setBase(code); else addCurrency(code); }
 document.getElementById("pk-close").addEventListener("click", closePicker);
 pickerEl.addEventListener("click", e => {
   if (e.target === pickerEl) { closePicker(); return; }   // backdrop click
   const b = e.target.closest("button[data-add]");
-  if (!b) return;
-  closePicker();
-  addCurrency(b.dataset.add);
+  if (b) pick(b.dataset.add);
 });
 pkQEl.addEventListener("input", renderPicker);
 pkQEl.addEventListener("keydown", e => {
   if (e.key === "Enter") {
     const first = pkListEl.querySelector("button[data-add]");
-    if (first) { e.preventDefault(); closePicker(); addCurrency(first.dataset.add); }
+    if (first) { e.preventDefault(); pick(first.dataset.add); }
   }
 });
 
@@ -750,6 +846,7 @@ rowsEl.addEventListener("click", e => {
 amtEl.addEventListener("input", () => {
   state.amount = parseAmount(amtEl.value);
   render();
+  fxPulse(0.7);
   writeStore(AMOUNT_KEY, amtEl.value);
 });
 
@@ -760,6 +857,7 @@ quickEl.addEventListener("click", e => {
   amtEl.value = v.toLocaleString("en-CA");
   state.amount = v;
   render();
+  fxPulse(0.7);
   writeStore(AMOUNT_KEY, amtEl.value);
 });
 
@@ -775,6 +873,8 @@ document.addEventListener("visibilitychange", refreshIfStale);
 setInterval(refreshIfStale, 10 * 60 * 1000);
 
 /* ---------- boot ---------- */
+const savedBase = readStore(BASE_KEY);
+if (savedBase && /^[A-Z]{3}$/.test(savedBase)) BASE = savedBase;
 try {
   const saved = JSON.parse(readStore(CODES_KEY) || "null");
   if (Array.isArray(saved)) state.codes = saved.filter(c => typeof c === "string" && /^[A-Z]{3}$/.test(c) && c !== BASE);
@@ -784,11 +884,269 @@ if (savedAmount) amtEl.value = savedAmount;
 state.amount = parseAmount(amtEl.value);
 try {
   const cached = JSON.parse(readStore(DATA_KEY) || "null");
-  if (cached && cached.date && cached.rates) state.data = cached;
+  if (cached && cached.date && cached.rates && (cached.base || DEFAULT_BASE) === BASE) state.data = cached;
 } catch (e) {}
+showBase();
 buildQuick();
 buildRows();
 loadRates();
+</script>
+<script type="module">
+/* ============================================================
+   Background: a three.js scene behind the page.
+   - a rolling "market" of 30k glowing points
+   - gold and silver coins tumbling upward, each stamped with a currency symbol
+   - wireframe knots and a drifting sparkle field
+   Typing an amount, changing currency or fresh rates send a shockwave through it.
+   Follows light/dark mode, pauses in background tabs, and can be switched off (bottom-right button).
+   ============================================================ */
+import * as THREE from "./vendor/three.module.min.js";
+
+const FX_KEY = "loonie-rates.fx";
+const canvas = document.getElementById("fx");
+const toggle = document.getElementById("fx-toggle");
+const root = document.documentElement;
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+let enabled = true;
+try { enabled = localStorage.getItem(FX_KEY) !== "off"; } catch (e) {}
+
+let fx = null;
+
+function build() {
+  const small = Math.min(window.innerWidth, window.innerHeight) < 600;
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: !small, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
+  const uniforms = {
+    uTime: { value: 0 }, uPulse: { value: 0 }, uScale: { value: 1 }, uOpacity: { value: 1 },
+    uLow: { value: new THREE.Color() }, uMid: { value: new THREE.Color() }, uHigh: { value: new THREE.Color() },
+  };
+
+  /* ---- 1. the point ocean ---- */
+  const N = small ? 120 : 175, SIZE = 56;
+  const pos = new Float32Array(N * N * 3);
+  let p = 0;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    pos[p++] = (i / (N - 1) - 0.5) * SIZE;
+    pos[p++] = 0;
+    pos[p++] = (j / (N - 1) - 0.5) * SIZE - 12;
+  }
+  const waveGeo = new THREE.BufferGeometry();
+  waveGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const waveMat = new THREE.ShaderMaterial({
+    uniforms, transparent: true, depthWrite: false,
+    vertexShader: `
+      uniform float uTime, uPulse, uScale;
+      varying float vH; varying float vA;
+      void main() {
+        vec3 q = position;
+        float t = uTime;
+        float r = length(q.xz - vec2(0.0, -4.0));
+        float h = sin(q.x * 0.34 + t * 0.9) * 0.55
+                + sin(q.z * 0.47 - t * 1.25) * 0.5
+                + sin((q.x + q.z) * 0.19 + t * 0.6) * 0.95
+                + sin(q.x * 0.9 - q.z * 0.7 + t * 1.7) * 0.18;
+        // shockwave ring that travels outward when something happens on the page
+        float ring = sin(r * 1.1 - t * 6.0) * exp(-r * 0.09);
+        h = h * (1.0 + uPulse * 0.9) + ring * uPulse * 1.6;
+        q.y = h - 3.2;
+        vH = h;
+        vec4 mv = modelViewMatrix * vec4(q, 1.0);
+        vA = smoothstep(46.0, 8.0, -mv.z);
+        gl_PointSize = (2.2 + max(h, 0.0) * 1.5 + uPulse * 1.5) * uScale * (9.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uLow, uMid, uHigh; uniform float uOpacity;
+      varying float vH; varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        float k = clamp(vH * 0.33 + 0.5, 0.0, 1.0);
+        vec3 c = k < 0.5 ? mix(uLow, uMid, k * 2.0) : mix(uMid, uHigh, (k - 0.5) * 2.0);
+        gl_FragColor = vec4(c, smoothstep(0.5, 0.15, d) * vA * uOpacity * (0.35 + k * 0.65));
+      }`,
+  });
+  scene.add(new THREE.Points(waveGeo, waveMat));
+
+  /* ---- 2. coins ---- */
+  scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+  const key = new THREE.DirectionalLight(0xffffff, 1.7); key.position.set(4, 8, 6); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xff7a8c, 1.4); rim.position.set(-6, -2, -4); scene.add(rim);
+
+  function coinFace(symbol, a, b, ink) {
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(100, 90, 20, 128, 128, 140);
+    grad.addColorStop(0, a); grad.addColorStop(1, b);
+    g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = ink; g.globalAlpha = 0.55; g.lineWidth = 7;
+    g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([3, 9]); g.lineWidth = 5;
+    g.beginPath(); g.arc(128, 128, 116, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 0.9; g.fillStyle = ink;
+    g.font = `700 ${symbol.length > 1 ? 104 : 140}px Georgia, "Times New Roman", serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(symbol, 128, 138);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    return tex;
+  }
+  const GOLD = ["#ffe9a3", "#d99a1c", "#6b4300", 0xe2ab35], SILVER = ["#ffffff", "#aab4c2", "#39424f", 0xc3ccd8];
+  const SYMBOLS = [["$", GOLD], ["€", SILVER], ["¥", GOLD], ["£", SILVER], ["R$", GOLD], ["₿", SILVER], ["₩", GOLD], ["₹", SILVER]];
+  const coinGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.085, 44, 1);
+  const PER = small ? 5 : 9;
+  const coins = [], dummy = new THREE.Object3D();
+  for (const [sym, [a, b, ink, edge]] of SYMBOLS) {
+    const tex = coinFace(sym, a, b, ink);
+    const face = new THREE.MeshPhongMaterial({ map: tex, shininess: 60, specular: 0x555555 });
+    const side = new THREE.MeshPhongMaterial({ color: edge, shininess: 80, specular: 0x777777 });
+    const mesh = new THREE.InstancedMesh(coinGeo, [side, face, face], PER);
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    for (let i = 0; i < PER; i++) coins.push({
+      mesh, i,
+      x: (Math.random() - 0.5) * 26, y: Math.random() * 13 - 5, z: -Math.random() * 16 + 3,
+      vy: 0.25 + Math.random() * 0.55, kick: 0,
+      rx: Math.random() * 6.28, ry: Math.random() * 6.28, rz: Math.random() * 6.28,
+      sx: (Math.random() - 0.5) * 1.6, sy: (Math.random() - 0.5) * 2.4, sz: (Math.random() - 0.5) * 1.2,
+      ph: Math.random() * 6.28, s: 0.7 + Math.random() * 0.9,
+    });
+  }
+
+  /* ---- 3. wireframes ---- */
+  const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.2, depthWrite: false });
+  const knot = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.TorusKnotGeometry(3.2, 0.95, 180, 18, 2, 3)), lineMat);
+  knot.position.set(9, 5.5, -15); scene.add(knot);
+  const ico = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.6, 1)), lineMat);
+  ico.position.set(-10, 4.5, -12); scene.add(ico);
+  const ring = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.TorusGeometry(7, 0.06, 6, 120)), lineMat);
+  ring.position.set(0, 2, -18); scene.add(ring);
+  const ring2 = ring.clone(); ring2.scale.setScalar(1.35); scene.add(ring2);
+
+  /* ---- 4. sparkles ---- */
+  const S = small ? 350 : 800, sp = new Float32Array(S * 3);
+  for (let i = 0; i < S; i++) { sp[i * 3] = (Math.random() - 0.5) * 50; sp[i * 3 + 1] = Math.random() * 22 - 6; sp[i * 3 + 2] = -Math.random() * 34 + 6; }
+  const sparkGeo = new THREE.BufferGeometry(); sparkGeo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+  const sparkMat = new THREE.PointsMaterial({ size: 0.09, transparent: true, opacity: 0.8, depthWrite: false, sizeAttenuation: true });
+  const sparks = new THREE.Points(sparkGeo, sparkMat); scene.add(sparks);
+
+  /* ---- theme ---- */
+  function theme() {
+    const dark = darkMq.matches;
+    const blend = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    waveMat.blending = blend; lineMat.blending = blend; sparkMat.blending = blend;
+    if (dark) {
+      uniforms.uLow.value.set("#2b5cff"); uniforms.uMid.value.set("#ff4d6d"); uniforms.uHigh.value.set("#ffd166");
+      uniforms.uOpacity.value = 0.95;
+      lineMat.color.set("#ff6378"); lineMat.opacity = 0.28; sparkMat.color.set("#ffd9a0");
+    } else {
+      uniforms.uLow.value.set("#5a6b85"); uniforms.uMid.value.set("#c8102e"); uniforms.uHigh.value.set("#f0a202");
+      uniforms.uOpacity.value = 0.85;
+      lineMat.color.set("#c8102e"); lineMat.opacity = 0.2; sparkMat.color.set("#c8102e");
+    }
+    waveMat.needsUpdate = lineMat.needsUpdate = sparkMat.needsUpdate = true;
+  }
+  theme();
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.fov = w < h ? 68 : 55;   // see more of the scene on tall phone screens
+    camera.updateProjectionMatrix();
+    uniforms.uScale.value = renderer.getPixelRatio() * Math.min(1.4, Math.max(0.8, h / 800));
+  }
+  resize();
+
+  let pulse = 0, pulseTarget = 0, mx = 0, my = 0, cx = 0, cy = 0, t = 0, last = performance.now(), raf = 0, running = false;
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    pulseTarget *= Math.exp(-dt * 1.6);
+    pulse += (pulseTarget - pulse) * Math.min(1, dt * 7);
+    t += dt * (1 + pulse * 0.8);
+    uniforms.uTime.value = t; uniforms.uPulse.value = pulse;
+
+    cx += (mx - cx) * dt * 2; cy += (my - cy) * dt * 2;
+    const sc = Math.min(1, window.scrollY / 900);
+    camera.position.set(cx * 2.4 + Math.sin(t * 0.13) * 1.2, 2.6 - cy * 1.1 + sc * 2.2 + Math.sin(t * 0.21) * 0.3, 10.5);
+    camera.lookAt(cx * 0.6, 0.6 - sc * 1.5, -6);
+
+    for (const c of coins) {
+      c.kick *= Math.exp(-dt * 2.2);
+      c.y += (c.vy + c.kick) * dt;
+      if (c.y > 9.5) { c.y = -5.5; c.x = (Math.random() - 0.5) * 26; c.z = -Math.random() * 16 + 3; }
+      const spin = 1 + pulse * 5 + c.kick;
+      c.rx += c.sx * dt * spin; c.ry += c.sy * dt * spin; c.rz += c.sz * dt * spin;
+      dummy.position.set(c.x + Math.sin(t * 0.5 + c.ph) * 0.7, c.y, c.z + Math.cos(t * 0.37 + c.ph) * 0.5);
+      dummy.rotation.set(c.rx, c.ry, c.rz);
+      dummy.scale.setScalar(c.s * (1 + pulse * 0.25));
+      dummy.updateMatrix();
+      c.mesh.setMatrixAt(c.i, dummy.matrix);
+      c.mesh.instanceMatrix.needsUpdate = true;
+    }
+
+    knot.rotation.x = t * 0.17; knot.rotation.y = t * 0.23; knot.scale.setScalar(1 + pulse * 0.35 + Math.sin(t * 0.8) * 0.04);
+    ico.rotation.x = -t * 0.2; ico.rotation.z = t * 0.15; ico.scale.setScalar(1 + pulse * 0.5);
+    ring.rotation.x = Math.PI / 2 + Math.sin(t * 0.3) * 0.5; ring.rotation.y = t * 0.25;
+    ring2.rotation.x = Math.PI / 2 + Math.cos(t * 0.27) * 0.6; ring2.rotation.z = -t * 0.2;
+    sparks.rotation.y = t * 0.02; sparks.position.y = Math.sin(t * 0.25) * 0.6;
+    sparkMat.size = 0.09 + pulse * 0.1;
+
+    renderer.render(scene, camera);
+    if (running) raf = requestAnimationFrame(frame);
+  }
+
+  function start() {
+    if (running) return;
+    if (reduce.matches) { frame(performance.now()); return; }   // one still frame, no motion
+    running = true; last = performance.now(); raf = requestAnimationFrame(frame);
+  }
+  function stop() { running = false; cancelAnimationFrame(raf); }
+
+  const onMove = e => { mx = (e.clientX / window.innerWidth) * 2 - 1; my = (e.clientY / window.innerHeight) * 2 - 1; };
+  window.addEventListener("pointermove", onMove, { passive: true });
+  window.addEventListener("resize", () => { resize(); if (!running) frame(performance.now()); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else if (enabled) start(); });
+  const retheme = () => { theme(); if (!running) frame(performance.now()); };
+  if (darkMq.addEventListener) darkMq.addEventListener("change", retheme); else darkMq.addListener(retheme);
+
+  return {
+    start, stop,
+    pulse(n) {
+      pulseTarget = Math.min(2.5, pulseTarget + (n || 1));
+      for (const c of coins) c.kick += (n || 1) * (1.2 + Math.random() * 2.2);
+    },
+  };
+}
+
+function apply() {
+  root.classList.toggle("fx", enabled);
+  canvas.hidden = !enabled;
+  toggle.setAttribute("aria-pressed", String(enabled));
+  toggle.title = enabled ? "Turn background animation off" : "Turn background animation on";
+  if (enabled) {
+    if (!fx) {
+      try { fx = build(); } catch (e) { enabled = false; fx = null; root.classList.remove("fx"); canvas.hidden = true; toggle.hidden = true; return; }
+    }
+    fx.start();
+  } else if (fx) fx.stop();
+}
+
+toggle.hidden = false;
+toggle.addEventListener("click", () => {
+  enabled = !enabled;
+  try { localStorage.setItem(FX_KEY, enabled ? "on" : "off"); } catch (e) {}
+  apply();
+  if (enabled && fx) fx.pulse(1.5);
+});
+window.ratesFx = { pulse(n) { if (enabled && fx) fx.pulse(n); } };
+apply();
 </script>
 </body>
 </html>
